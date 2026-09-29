@@ -1,0 +1,10 @@
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+*.ipynb
+.vscode/
+.DS_Store
+exps
+**/*.scp
+**/mywork

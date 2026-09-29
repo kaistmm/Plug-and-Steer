@@ -1,0 +1,123 @@
+#### general settings
+name: ConvTasnet
+num_spks: 2
+
+### DDP settings; node1 is master node
+DDP:
+  port: 23666
+  backend: nccl
+  devices:
+    node1:
+      ip: localhost
+      gpus: []
+      batch_size: 2  # effective batch size per GPU is batchsize * (grad_accum_num)
+
+
+#### datasets
+datasets:
+  train:
+    dataset:
+      name: LRS2mix
+      config:
+        mix_scp: ./data/lrs2_2mix/tr_mix.scp
+        target_scp: [./data/lrs2_2mix/tr_s1.scp, ./data/lrs2_2mix/tr_s2.scp]
+        sample_rate: 16000
+        chunk_size: 32000
+        debug_mode: false
+
+    sampler:
+      name: DDP_sampler
+      config:
+        shuffle: true
+
+    loader:
+      shuffle: false
+      num_workers: 4  # per GPU
+      pin_memory: true
+
+  validation:
+    dataset:
+      name: LRS2mix
+      config:
+        mix_scp: ./data/lrs2_2mix/tt_mix.scp
+        target_scp: [./data/lrs2_2mix/tt_s1.scp, ./data/lrs2_2mix/tt_s2.scp]
+        sample_rate: 16000
+        chunk_size: -1  # full utterance
+        debug_mode: false
+
+    sampler:
+      name: DDP_sampler
+      config:
+        shuffle: false
+
+    loader:
+      shuffle: false
+      num_workers: 4  # per GPU
+      pin_memory: true
+
+
+#### network structures
+model:
+  name: MossFormer2_swap
+  config:
+    in_channels: 512
+    out_channels: 512
+    num_blocks: 24
+    kernel_size: 16
+    norm: "ln"
+    num_spks: 2
+    skip_around_intra: true
+    use_global_pos_enc: true
+    max_length: 20000
+    ckpt_path: exps/in26/mossformer2-lrs2-ao_pt-base/ckpt/best.pt
+    freeze: true
+    swap_layer: 1
+
+#### training settings: learning rate scheme, loss
+trainer:
+  name: basic_separation_trainer_swap
+  epoch: 2000
+  early_stop: 2000
+  clip_norm: 5
+  grad_accum_num: 1  # effective batch size per GPU is batchsize * (grad_accum_num)
+  regularization:
+  regularization_weight:
+  loss:
+    name: SISNR
+    config:
+  keep_last_ckpt: 10
+
+#### Optimizer settings
+optim:
+  name: Adam
+  config:
+    lr: 0.0005
+    weight_decay: 0
+
+#weight_decay: 0.00001
+##clip_norm: 5
+##momentum: 0
+
+#### scheduler settings
+scheduler:
+  name: CosineAnnealingLR
+  loss_pass: false
+  call_step: iteration  # epoch or iteration
+  config:
+    num_warmup_steps: 0 # The number of steps for the warmup phase
+    num_training_steps: 10033  #The total number of training steps.
+    num_cycles: 1 # The number of hard restarts to use. (3 to prevent early stop)
+
+#### Resume training settings
+checkpoint:
+  resume:
+    enable: false
+    type: last  # last or best
+    only_model: false  # only load model weights
+
+#### logging by tensorboard
+logging:
+  name: logger
+  log_level: INFO
+  log_freq: 100
+  tensorboard: true

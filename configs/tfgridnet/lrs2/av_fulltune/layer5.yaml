@@ -1,0 +1,142 @@
+#### general settings
+name: MossFormer2
+num_spks: 2
+
+### DDP settings; node1 is master node
+DDP:
+  port: 23708
+  backend: nccl
+  devices:
+    node1:
+      ip: localhost
+      gpus: []
+      batch_size: 1  # effective batch size per GPU is batchsize * (grad_accum_num)
+
+
+#### datasets
+datasets:
+  train:
+    dataset:
+      name: LRS2mix
+      config:
+        mix_scp: ./data/lrs2_2mix/tr_mix.scp
+        target_scp: [./data/lrs2_2mix/tr_s1.scp, ./data/lrs2_2mix/tr_s2.scp]
+        sample_rate: 16000
+        chunk_size: 32000
+        debug_mode: false
+        normalize: true
+        return_video: true
+
+    sampler:
+      name: DDP_sampler
+      config:
+        shuffle: true
+
+    loader:
+      shuffle: false
+      num_workers: 4  # per GPU
+      pin_memory: true
+
+  validation:
+    dataset:
+      name: LRS2mix
+      config:
+        mix_scp: ./data/lrs2_2mix/tt_mix.scp
+        target_scp: [./data/lrs2_2mix/tt_s1.scp, ./data/lrs2_2mix/tt_s2.scp]
+        sample_rate: 16000
+        chunk_size: -1  # full utterance
+        debug_mode: true
+        normalize: true
+        return_video: true
+
+    sampler:
+      name: DDP_sampler
+      config:
+        shuffle: false
+
+    loader:
+      shuffle: false
+      num_workers: 4  # per GPU
+      pin_memory: true
+
+#### network structures
+model:
+  name: TFGridNetV1_av
+  config:
+    n_srcs: 2
+    n_fft: 512
+    stride: 128
+    window: "hann"
+    n_imics: 1
+    n_layers: 6
+    lstm_hidden_units: 256
+    attn_n_head: 4
+    attn_approx_qk_dim: 512
+    emb_dim: 32
+    emb_ks: 8
+    emb_hs: 1
+    activation: "prelu"
+    eps: 0.00001
+    use_builtin_complex: false
+    ref_channel: -1
+    ckpt_path: exps/in26/tfgridnet-lrs2-ao_pt-base/ckpt/best.pt
+    freeze: false
+    swap_layer: 5
+
+
+#### training settings: learning rate scheme, loss
+trainer:
+  name: av_trainer
+  epoch: 2000
+  early_stop: 2000
+  clip_norm: 5
+  grad_accum_num: 1  # effective batch size per GPU is batchsize * (grad_accum_num)
+  gate_loss_weight: 1
+  loss:
+    name: SISNR
+    config:
+  keep_last_ckpt: 10
+
+#### Optimizer settings
+optim:
+  name: Adam
+  config:
+    lr: 0.0005
+    weight_decay: 0
+  # Full fine-tuning trains the backbone too, at a tenth of the adapter's rate, so
+  # adapting to LRS2 does not overwrite what the backbone learned (paper 3.3).
+  param_groups:
+    - name: adapter
+      modules: [visual_module, vis_module, compress, decompress]
+      lr: 5.0e-4
+    - name: backbone
+      lr: 5.0e-5
+#weight_decay: 0.00001
+##clip_norm: 5
+##momentum: 0
+
+#### scheduler settings
+scheduler:
+  name: CosineAnnealingLR
+  loss_pass: false
+  call_step: iteration  # epoch or iteration
+  config:
+    num_warmup_steps: 1000 # The number of steps for the warmup phase
+    num_training_steps: 100666  #The total number of training steps.
+    num_cycles: 1 # The number of hard restarts to use. (3 to prevent early stop)
+
+
+
+#### Resume training settings
+checkpoint:
+  resume:
+    enable: true
+    type: last  # last or best
+    only_model: false  # only load model weights
+
+#### logging by tensorboard
+logging:
+  name: logger
+  log_level: INFO
+  log_freq: 100
+  tensorboard: true

@@ -1,0 +1,21 @@
+# Core framework. Versions are the ones the published experiments ran on;
+# lower bounds are what the code actually needs.
+torch>=2.0
+torchaudio>=2.0
+torchmetrics>=1.0          # DNSMOS / NISQA used in AV validation
+numpy>=1.22,<2.0
+scipy>=1.9
+soundfile>=0.12
+librosa>=0.9.2
+einops>=0.6                # MossFormer2 blocks
+torch-complex>=0.4         # TF-GridNet (espnet-derived STFT layers)
+opencv-python>=4.6         # lip-crop video loading in the AV dataset
+matplotlib>=3.5            # spectrogram figures for tensorboard
+tensorboard>=2.11
+ruamel.yaml>=0.17.21       # config I/O; see tools/config_io.py for why not PyYAML
+tqdm>=4.64
+
+# Optional: only needed for src/model/SPMamba.py and src/model/spmamba/*,
+# which are vendored and not used by any experiment in this repository.
+# mamba-ssm>=1.2
+# causal-conv1d>=1.2

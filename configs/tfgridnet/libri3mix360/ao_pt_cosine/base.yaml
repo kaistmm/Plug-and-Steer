@@ -1,0 +1,164 @@
+#### TFGridNetV1 audio-only pre-training on libri3mix
+#
+# ao_pt_cosine: fixed-budget cosine, as opposed to the `ao_pt` set, which
+# reproduces the paper's ReduceLROnPlateau schedule. Same model, same data,
+# same optimizer -- only the learning-rate schedule and its stopping rule
+# differ.
+#
+#   budget      200,000 optimizer steps, single cosine cycle, 6,000-step warmup
+#   batch       2 per GPU x 2 GPUs x accum 1 = 4 effective
+#   corpus      N = 33,900 utterances  ->  D/N = 24 effective passes
+#   epoch       2,000 updates (8,000 items), so 100 epochs cover the budget
+#
+# Libri3Mix train-360, three speakers.
+
+name: TFGridNetV1
+num_spks: 3
+
+### DDP settings; node1 is master node
+DDP:
+  port: 23705
+  backend: nccl
+  devices:
+    node1:
+      ip: localhost
+      gpus: []          # empty -> use whatever CUDA_VISIBLE_DEVICES exposes
+      batch_size: 2
+
+
+#### datasets
+datasets:
+  train:
+    dataset:
+      name: Librimix
+      config:
+        mix_scp: ./data/librimix/libri3mix/tr_mix.scp
+        target_scp: [./data/librimix/libri3mix/tr_s1.scp, ./data/librimix/libri3mix/tr_s2.scp, ./data/librimix/libri3mix/tr_s3.scp]
+
+        sample_rate: 16000
+        chunk_size: 48000        # 3 s, as in the paper
+        debug_mode: false
+        normalize: true
+
+        # A fixed-size epoch. This does NOT change how much training happens --
+        # the budget is the step count above. It makes the validation and
+        # checkpoint cadence identical across corpora of different sizes.
+        # Items are drawn as a rotating partition of a shuffled corpus, so
+        # every utterance is seen once per sweep (see epoch_subset.py).
+        num_per_epoch: 8000
+        resample_per_epoch: true
+
+    sampler:
+      name: DDP_sampler
+      config:
+        shuffle: true
+
+    loader:
+      shuffle: false
+      num_workers: 4          # per GPU
+      pin_memory: true
+      drop_last: true         # keeps every accumulation window full
+
+  validation:
+    dataset:
+      name: Librimix
+      config:
+        mix_scp: ./data/librimix/libri3mix/tt_mix.scp
+        target_scp: [./data/librimix/libri3mix/tt_s1.scp, ./data/librimix/libri3mix/tt_s2.scp, ./data/librimix/libri3mix/tt_s3.scp]
+
+        sample_rate: 16000
+        chunk_size: -1           # full utterance
+        debug_mode: false
+        normalize: true
+
+        # Fixed subset, never resampled: the validation curve has to measure the
+        # model, not which utterances this epoch happened to draw.
+        num_per_epoch: 1000
+        resample_per_epoch: false
+
+    sampler:
+      name: DDP_sampler
+      config:
+        shuffle: false
+
+    loader:
+      shuffle: false
+      num_workers: 4
+      pin_memory: true
+
+
+#### network structures
+model:
+  name: TFGridNetV1
+  config:
+    n_srcs: 3
+    n_fft: 512
+    stride: 128
+    window: "hann"
+    n_imics: 1
+    n_layers: 6
+    lstm_hidden_units: 256
+    attn_n_head: 4
+    attn_approx_qk_dim: 512
+    emb_dim: 32
+    emb_ks: 8
+    emb_hs: 1
+    activation: "prelu"
+    eps: 0.00001
+    use_builtin_complex: false
+    ref_channel: -1
+
+
+#### training settings
+trainer:
+  name: basic_separation_trainer
+  gpus_hint: 2
+  seed: 1234
+  precision_mode: "bf16-mixed"
+  precision_inference: true
+  # The cosine schedule defines the budget; `epoch` only has to be large enough
+  # that the job never exits on its own. Past 200,000 steps the lr is 0, so the
+  # extra epochs hold the GPU reservation without moving the weights.
+  epoch: 2000
+  early_stop: 2000
+  clip_norm: 5
+  grad_accum_num: 1
+  keep_last_ckpt: 10
+  loss:
+    name: SISNR_PIT
+    config:
+
+
+#### Optimizer settings
+optim:
+  name: Adam
+  config:
+    lr: 0.0005
+    weight_decay: 0
+
+
+#### scheduler settings
+scheduler:
+  name: CosineAnnealingLR
+  loss_pass: false
+  call_step: iteration
+  config:
+    num_warmup_steps: 6000
+    num_training_steps: 200000
+    num_cycles: 1            # one decay to zero; never restart
+
+
+#### Resume training settings
+checkpoint:
+  resume:
+    enable: true
+    type: last
+    only_model: false
+
+
+#### logging by tensorboard
+logging:
+  name: logger
+  log_level: INFO
+  log_freq: 100
+  tensorboard: true
