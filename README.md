@@ -92,7 +92,7 @@ python data/lrs2_2mix/create_scp_av.py --lrs2_src_dir LRS2_SRC_DIR --lrs2_2mix_d
 
 **Ours**
 
-- **Best AV-TSE checkpoint** — LSM on MossFormer2 (Tab. 2): [Link](https://drive.google.com/drive/folders/109ZuVFPuMRy7ifiWqk-3Gze2gErwbilU?usp=sharing)
+- **Best AV-TSE checkpoint** — LSM on MossFormer2 (Tab. 2): [Link](https://drive.google.com/file/d/16n9_YxnA2xJjqcr9JKvqUb83cA5QPNC6/view?usp=sharing)
 
 **Pretrained backbones** (via ClearerVoice-Studio and Hugging Face)
 
